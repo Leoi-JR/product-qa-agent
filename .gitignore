@@ -1,0 +1,73 @@
+# ── 忽略 ─────────────────────────────
+.claude/
+.vscode/
+.env
+项目开发备忘录.md
+
+# ── 敏感配置（保留 .env.example 作为模板）─────
+*.env
+!.env.example
+
+# ── 大文件：数据与模型（体积过大，不入库）─────
+# 数据文件（parquet 308MB+ / npz 118MB / ChromaDB）
+data/cleaned_products.parquet
+data/train-00000-of-00001.parquet
+data/field_embeddings.npz
+data/product_field_indices.parquet
+data/chroma_db/
+
+# 模型文件（BGE-M3 约 2GB）
+models/
+
+# ── Python ───────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# 包管理
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 测试与类型检查缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ── IDE / 编辑器 ─────────────────────────────
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# ── 操作系统 ─────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ── 日志 ─────────────────────────────────────
+*.log
+logs/
