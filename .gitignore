@@ -71,3 +71,7 @@ desktop.ini
 # ── 日志 ─────────────────────────────────────
 *.log
 logs/
+
+# 本地运维脚本（部署环境相关，不入库）
+scripts/svc_start.sh
+scripts/svc_stop.sh
