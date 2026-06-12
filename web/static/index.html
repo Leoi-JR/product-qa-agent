@@ -279,6 +279,34 @@
             font-weight: 600;
         }
 
+        /* 骨架屏 */
+        .skeleton {
+            animation: pulse 1.5s infinite ease-in-out;
+            pointer-events: none;
+        }
+        .skeleton-img {
+            width: 100%;
+            height: 160px;
+            background: #f4f6f8;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+        .skeleton-line {
+            background: #f4f6f8;
+            border-radius: 4px;
+            height: 14px;
+            margin-bottom: 8px;
+        }
+        .skeleton .price-line { width: 40%; height: 20px; margin-bottom: 12px; }
+        .skeleton .title-line { width: 100%; }
+        .skeleton .title-line-short { width: 60%; }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
         /* 答案文本 */
         .answer {
             color: var(--text-main);
@@ -496,43 +524,77 @@
             scrollBottom();
         }
 
-        function renderProducts(bubble, products) {
-            if (!products || !products.length) return;
-            const grid = document.createElement('div');
-            grid.className = 'products';
-            products.forEach(p => {
-                const card = document.createElement('div');
-                card.className = 'product-card';
+        function createProductCardElement(p) {
+            const card = document.createElement('div');
+            card.className = 'product-card';
+            
+            let priceHtml = '';
+            if (p.price && p.price > 0) {
+                priceHtml = `<div class="price-row"><span class="price-symbol">$</span><span class="price">${p.price.toFixed(2)}</span></div>`;
+            } else {
+                priceHtml = `<div class="price-row"><span class="price unknown">价格待定</span></div>`;
+            }
+            
+            const ratingStr = p.average_rating > 0 ? `⭐ ${p.average_rating.toFixed(1)}` : '';
+            const imgHtml = p.image
+                ? `<img src="${escapeHtml(p.image)}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\'><rect width=\\'100\\' height=\\'100\\' fill=\\'%23f4f6f8\\'/><text x=\\'50\\' y=\\'50\\' font-family=\\'Arial\\' font-size=\\'12\\' fill=\\'%2386909c\\' text-anchor=\\'middle\\' dy=\\'4\\'>暂无图片</text></svg>'" loading="lazy">`
+                : `<img style="display:none">`;
                 
-                let priceHtml = '';
-                if (p.price && p.price > 0) {
-                    priceHtml = `<div class="price-row"><span class="price-symbol">$</span><span class="price">${p.price.toFixed(2)}</span></div>`;
-                } else {
-                    priceHtml = `<div class="price-row"><span class="price unknown">价格待定</span></div>`;
-                }
-                
-                const ratingStr = p.average_rating > 0 ? `⭐ ${p.average_rating.toFixed(1)}` : '';
-                const imgHtml = p.image
-                    ? `<img src="${escapeHtml(p.image)}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\'><rect width=\\'100\\' height=\\'100\\' fill=\\'%23f4f6f8\\'/><text x=\\'50\\' y=\\'50\\' font-family=\\'Arial\\' font-size=\\'12\\' fill=\\'%2386909c\\' text-anchor=\\'middle\\' dy=\\'4\\'>暂无图片</text></svg>'" loading="lazy">`
-                    : `<img style="display:none">`;
-                    
-                card.innerHTML = `
-                    ${imgHtml}
-                    ${priceHtml}
-                    <div class="title">${escapeHtml(p.title || '')}</div>
-                    ${p.brand ? `<div class="brand">${escapeHtml(p.brand)}</div>` : ''}
-                    <div class="meta">
-                        <span>${escapeHtml(ratingStr)}</span>
-                        <!-- 隐藏相似度百分比 -->
-                    </div>
-                `;
-                card.addEventListener('click', () => {
-                    if (p.image) window.open(p.image, '_blank');
-                });
-                grid.appendChild(card);
+            card.innerHTML = `
+                ${imgHtml}
+                ${priceHtml}
+                <div class="title">${escapeHtml(p.title || '')}</div>
+                ${p.brand ? `<div class="brand">${escapeHtml(p.brand)}</div>` : ''}
+                <div class="meta">
+                    <span>${escapeHtml(ratingStr)}</span>
+                </div>
+            `;
+            card.addEventListener('click', () => {
+                if (p.image) window.open(p.image, '_blank');
             });
-            bubble.appendChild(grid);
-            scrollBottom();
+            return card;
+        }
+
+        function createSkeletonElement() {
+            const card = document.createElement('div');
+            card.className = 'product-card skeleton';
+            card.innerHTML = `
+                <div class="skeleton-img"></div>
+                <div class="skeleton-line price-line"></div>
+                <div class="skeleton-line title-line"></div>
+                <div class="skeleton-line title-line-short"></div>
+            `;
+            return card;
+        }
+
+        async function renderProductsAsync(grid, products, renderState) {
+            for (let i = 0; i < products.length; i++) {
+                const p = products[i];
+                const card = createProductCardElement(p);
+                grid.appendChild(card);
+                scrollBottom();
+                
+                if (i < products.length - 1) {
+                    if (renderState && renderState.fastForward) {
+                        continue; // 如果文字已经开始输出，跳过后续所有等待和骨架屏
+                    }
+                    
+                    const skeleton = createSkeletonElement();
+                    grid.appendChild(skeleton);
+                    scrollBottom();
+                    
+                    const delay = Math.random() * 500 + 100; // 100 to 600 ms
+                    
+                    // 将等待切片为 50ms 的小段，以便随时中断
+                    let elapsed = 0;
+                    while (elapsed < delay && (!renderState || !renderState.fastForward)) {
+                        await new Promise(r => setTimeout(r, 50));
+                        elapsed += 50;
+                    }
+                    
+                    skeleton.remove();
+                }
+            }
         }
 
         function createAnswerArea(bubble) {
@@ -603,6 +665,7 @@
                 let buffer = '';
                 let answerArea = null;
                 let answerStarted = false;
+                let renderState = { fastForward: false };
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -629,15 +692,27 @@
                                 break;
                             case 'retrieved':
                                 try {
-                                    renderProducts(bubble, JSON.parse(evt.data));
+                                    const products = JSON.parse(evt.data);
+                                    if (products && products.length > 0) {
+                                        const grid = document.createElement('div');
+                                        grid.className = 'products';
+                                        bubble.appendChild(grid);
+                                        // 异步渲染卡片，传入 renderState
+                                        renderProductsAsync(grid, products, renderState);
+                                    }
                                 } catch (e) { /* ignore */ }
                                 
                                 const statusEl = bubble.querySelector('.status');
                                 if (statusEl) statusEl.remove();
                                 answerArea = createAnswerArea(bubble);
+                                // 立即显示光标，表示卡片渲染完后即将有文字输出
+                                answerArea.ans.innerHTML = '<span class="cursor"></span>';
                                 answerStarted = true;
+                                scrollBottom();
                                 break;
                             case 'token':
+                                // 收到文字 token，立即打断剩余卡片的排队延迟
+                                renderState.fastForward = true;
                                 if (answerArea) {
                                     appendToken(answerArea, evt.data);
                                 }
