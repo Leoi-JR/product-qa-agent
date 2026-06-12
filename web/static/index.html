@@ -103,6 +103,7 @@
             border: 1px solid var(--border);
             box-shadow: var(--shadow-md);
             max-width: 85%;
+            width: 100%; /* 确保能给内部 grid 足够的空间，防止流式输出时宽度突然变大 */
             font-size: 15px;
             line-height: 1.7;
             color: var(--text-main);
@@ -147,6 +148,20 @@
             display: flex;
             align-items: center;
             gap: 6px;
+            list-style: none; /* 隐藏默认箭头 */
+        }
+        details.parsed-detail summary::-webkit-details-marker {
+            display: none; /* Safari 隐藏默认箭头 */
+        }
+        details.parsed-detail summary::before {
+            content: "▶";
+            font-size: 10px;
+            color: var(--text-light);
+            transition: transform 0.2s;
+            margin-right: 4px;
+        }
+        details.parsed-detail[open] summary::before {
+            transform: rotate(90deg);
         }
         details.parsed-detail summary:hover {
             color: var(--primary);
@@ -237,10 +252,9 @@
         .product-card .title {
             font-size: 14px;
             line-height: 1.5;
-            height: 42px;
             overflow: hidden;
             display: -webkit-box;
-            -webkit-line-clamp: 2;
+            -webkit-line-clamp: 3; /* 放宽到 3 行，显示更多文字 */
             -webkit-box-orient: vertical;
             margin-bottom: 8px;
             color: var(--text-main);
@@ -273,8 +287,8 @@
         .answer p { margin-bottom: 12px; }
         .answer p:last-child { margin-bottom: 0; }
         .answer strong { color: #000; font-weight: 600; }
-        .answer ul, .answer ol { margin-left: 20px; margin-bottom: 12px; }
-        .answer li { margin-bottom: 4px; }
+        .answer ul, .answer ol { margin-left: 24px; margin-bottom: 12px; }
+        .answer li { margin-bottom: 4px; padding-left: 4px; }
         .answer code {
             background: #f4f6f8;
             padding: 2px 6px;
@@ -396,7 +410,7 @@
             <div class="msg agent">
                 <div class="bubble">
                     <p style="margin-bottom: 10px;">你好！我是商品智能推荐助手。可以试试这些查询：</p>
-                    <ul style="color: var(--text-regular);">
+                    <ul style="color: var(--text-regular); padding-left: 24px;">
                         <li>推荐一款续航好、降噪强的蓝牙耳机</li>
                         <li>Nike 的运动鞋，预算100美元以内</li>
                         <li>200美元以内适合徒步的红色背包</li>
@@ -463,7 +477,7 @@
         function renderParsed(bubble, data) {
             const detail = document.createElement('details');
             detail.className = 'parsed-detail';
-            let html = `<summary>💡 查看检索条件</summary><div class="parsed-content">`;
+            let html = `<summary>查看检索条件</summary><div class="parsed-content">`;
             html += `<div style="margin-bottom: 10px;"><span class="label">语义查询：</span><code>${escapeHtml(data.semantic_query || '')}</code></div>`;
             
             const extracted = data.extracted || {};
