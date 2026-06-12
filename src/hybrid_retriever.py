@@ -62,8 +62,8 @@ class HybridRetriever:
         self.chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
         self.collection = self.chroma_client.get_collection(COLLECTION_NAME)
 
-        logger.info("加载 BGE-M3 模型...")
-        self.model = BGEM3FlagModel(model_path, use_fp16=True, device="cuda")
+        logger.info("加载 BGE-M3 模型（锁定 cuda:3）...")
+        self.model = BGEM3FlagModel(model_path, use_fp16=True, devices=["cuda:3"])
         logger.info("HybridRetriever 初始化完成，共 %d 条商品", self.n_products)
 
     def _cosine_matrix(self, query_vec: np.ndarray, mat: np.ndarray) -> np.ndarray:

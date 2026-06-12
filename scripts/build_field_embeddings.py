@@ -76,8 +76,8 @@ def main():
     logger.info("加载清洗后的数据: %s", DATA_PATH)
     df = pd.read_parquet(DATA_PATH)
 
-    logger.info("加载 BGE-M3 模型...")
-    model = BGEM3FlagModel(MODEL_PATH, use_fp16=True, device="cuda")
+    logger.info("加载 BGE-M3 模型（锁定 cuda:3）...")
+    model = BGEM3FlagModel(MODEL_PATH, use_fp16=True, devices=["cuda:3"])
 
     # 1. 收集唯一值
     unique_map = collect_unique_values(df)

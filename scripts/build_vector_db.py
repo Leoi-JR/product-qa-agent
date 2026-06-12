@@ -54,8 +54,8 @@ def build_metadata(df: pd.DataFrame) -> list[dict]:
 
 
 def embed_and_store(df: pd.DataFrame):
-    logger.info("加载 BGE-M3 模型...")
-    model = BGEM3FlagModel(MODEL_PATH, use_fp16=True, device="cuda")
+    logger.info("加载 BGE-M3 模型（锁定 cuda:3）...")
+    model = BGEM3FlagModel(MODEL_PATH, use_fp16=True, devices=["cuda:3"])
     logger.info("模型加载完成")
 
     texts = df["search_text"].fillna("").tolist()
@@ -138,7 +138,7 @@ def test_retrieval(collection):
     logger.info("检索效果测试")
     logger.info("=" * 60)
 
-    model = BGEM3FlagModel(MODEL_PATH, use_fp16=True, device="cuda")
+    model = BGEM3FlagModel(MODEL_PATH, use_fp16=True, devices=["cuda:3"])
 
     for query in test_queries:
         q_emb = model.encode([query], max_length=MAX_LENGTH)["dense_vecs"].astype("float32").tolist()
