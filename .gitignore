@@ -75,3 +75,8 @@ logs/
 # 本地运维脚本（部署环境相关，不入库）
 scripts/svc_start.sh
 scripts/svc_stop.sh
+
+# Langfuse 自托管数据与本地密钥
+infra/langfuse/.env
+infra/langfuse/.env.old
+infra/langfuse/data/

@@ -7,7 +7,8 @@ import os
 import logging
 from typing import Optional
 
-from openai import OpenAI
+from langfuse.openai import OpenAI
+from langfuse import observe
 from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -69,6 +70,7 @@ def format_products_for_prompt(products: list[dict]) -> str:
     return "\n".join(lines)
 
 
+@observe(name="generate_answer", as_type="chain")
 def generate_answer(
     user_query: str,
     products: list[dict],
@@ -107,6 +109,7 @@ def generate_answer(
     return answer
 
 
+@observe(name="generate_answer_stream", as_type="chain")
 def generate_answer_stream(
     user_query: str,
     products: list[dict],

@@ -11,6 +11,7 @@ import json
 import logging
 
 from openai import OpenAI
+from langfuse import observe
 from src.query_parser import parse_query, get_llm_client as get_parser_client
 from src.hybrid_retriever import HybridRetriever
 from src.answer_generator import generate_answer, generate_answer_stream
@@ -36,6 +37,7 @@ class ProductAgent:
         logger.info("Agent 就绪，输入查询开始对话")
         logger.info("=" * 60)
 
+    @observe(name="product_agent_chat", as_type="chain")
     def chat(self, user_query: str, top_k: int = 5, verbose: bool = True) -> str:
         """单轮对话：查询 → 检索 → 回答。"""
         # 1. 查询解析
@@ -62,6 +64,7 @@ class ProductAgent:
         answer = generate_answer(user_query, results, self.llm_client)
         return answer
 
+    @observe(name="product_agent_chat_stream", as_type="chain")
     def chat_stream(self, user_query: str, top_k: int = 5):
         """流式对话：yield SSE 事件 dict（event/data）。
 

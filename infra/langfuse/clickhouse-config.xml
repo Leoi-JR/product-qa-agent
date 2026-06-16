@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- 只监听 IPv4，避开禁用 IPv6 的容器环境导致的 listen 失败 -->
+    <!-- replace="replace" 替换默认配置里的 listen_host 列表（默认含 :: 和 0.0.0.0）-->
+    <listen_host replace="replace">0.0.0.0</listen_host>
+</clickhouse>

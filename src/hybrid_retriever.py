@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 import chromadb
 from FlagEmbedding import BGEM3FlagModel
+from langfuse import observe
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ class HybridRetriever:
             return np.zeros_like(arr)
         return (arr - lo) / (hi - lo)
 
+    @observe(name="hybrid_retrieve", as_type="retriever")
     def retrieve(
         self,
         semantic_query: str,

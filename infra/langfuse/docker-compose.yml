@@ -1,0 +1,203 @@
+# Langfuse 自托管开发环境（基于官方 v3 docker-compose 改写）
+#
+# 与官方的差异（本地化改动）：
+#   1. 数据用 bind mount 而非 named volume（更直观，可见）
+#   2. 内部服务（postgres/clickhouse/redis/minio）不暴露端口到宿主机（避开冲突）
+#   3. Web 端口默认 3001（避开 3000）
+#   4. ClickHouse 强制 IPv4-only（容器环境禁用 IPv6）
+#
+# 启动（在宿主机执行，路径里的空格用引号包起来）：
+#   cd "<宿主机路径>/商品知识问答 Agent/infra/langfuse"
+#   cp .env.example .env
+#   bash ./setup-data-dirs.sh     # 创建 data 目录并设置权限
+#   # 编辑 .env，填入所有密钥（用 openssl rand 生成）
+#   docker compose up -d
+#   docker compose logs -f langfuse-web
+#
+# 访问：http://<宿主机IP>:3001
+
+services:
+  # ── Postgres：元数据（用户、项目、API Key、prompt 定义）──
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: langfuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-langfuse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-langfuse}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    # 不暴露端口，避开宿主机已有的 Postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-langfuse}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # ── ClickHouse：trace 数据（高频写入）──
+  # ⚠️ CLICKHOUSE_DB 必须是 default（Langfuse migration 硬编码查询 default 库）
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.1-alpine
+    container_name: langfuse-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?请在 .env 中设置 CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ./data/clickhouse:/var/lib/clickhouse
+      # 注入 IPv4-only 监听配置，避开禁用 IPv6 的容器环境
+      - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/ipv4-only.xml
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    # 不暴露端口，避开宿主机已有的 ClickHouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis：worker 的任务队列（BullMQ）──
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: langfuse-redis
+    restart: unless-stopped
+    environment:
+      # healthcheck 用的密码（command 里的 --requirepass 是 redis 启动参数，不会暴露给 shell）
+      REDIS_AUTH: ${REDIS_AUTH:?请在 .env 中设置 REDIS_AUTH}
+    command: >
+      --requirepass ${REDIS_AUTH}
+      --maxmemory-policy noeviction
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      # 用 REDISCLI_AUTH 而不是 -a，避免警告污染日志
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_AUTH} redis-cli ping | grep -q PONG"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  # ── MinIO：S3 兼容对象存储（trace 附件、媒体）──
+  # Langfuse v3 强制需要 S3 后端，不能跳过
+  langfuse-minio:
+    image: minio/minio
+    container_name: langfuse-minio
+    restart: unless-stopped
+    entrypoint: sh
+    # 启动前预创建 langfuse bucket
+    command: >
+      -c 'mkdir -p /data/langfuse &&
+          minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-langfuse}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?请在 .env 中设置 MINIO_ROOT_PASSWORD}
+      # mc 客户端用 MC_HOST_<alias> 环境变量自动配置连接
+      # healthcheck 用 mc ready local 验证，比 HTTP 探测更可靠
+      MC_HOST_local: http://${MINIO_ROOT_USER:-langfuse}:${MINIO_ROOT_PASSWORD}@127.0.0.1:9000
+    volumes:
+      - ./data/minio:/data
+    healthcheck:
+      # minio/minio 镜像内置 mc 客户端，没有 wget/curl
+      # mc ready 返回 0 表示集群就绪
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Langfuse Worker：异步处理 trace，写入 ClickHouse ──
+  # 与 web 共享环境变量（YAML 锚点 &langfuse-env）
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: langfuse-worker
+    restart: unless-stopped
+    depends_on: &langfuse-deps
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment: &langfuse-env
+      # ── 基础配置 ──
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-langfuse}:${POSTGRES_PASSWORD}@langfuse-db:5432/${POSTGRES_DB:-langfuse}
+      SALT: ${SALT:?请在 .env 中设置 SALT}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?请在 .env 中设置 ENCRYPTION_KEY}
+      TELEMETRY_ENABLED: false
+
+      # ── ClickHouse（⚠️ URL 不带路径，DB 默认为 default）──
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://${CLICKHOUSE_USER:-langfuse}:${CLICKHOUSE_PASSWORD}@langfuse-clickhouse:9000
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_CLUSTER_ENABLED: false
+
+      # ── Redis（worker 用 BullMQ 处理队列）──
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_AUTH}
+      LANGFUSE_BULLMQ_SKIP_REDIS_VERSION_CHECK: true
+
+      # ── MinIO / S3 配置（trace event 上传）──
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-langfuse}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: true
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+
+      # ── MinIO / S3 配置（媒体附件上传）──
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-langfuse}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: true
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+
+      # ── MinIO / S3 配置（批量导出，关闭）──
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: false
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: exports/
+      LANGFUSE_S3_BATCH_EXPORT_REGION: auto
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-langfuse}
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: true
+
+  # ── Langfuse Web：UI + API（唯一暴露到宿主机的服务）──
+  # 通过 YAML merge key << 继承 worker 的所有环境变量
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: langfuse-web
+    restart: unless-stopped
+    depends_on: *langfuse-deps
+    ports:
+      # 宿主机端口 → 容器内 3000
+      # 默认 3001 避开常见冲突（3000 常被前端开发占用）
+      - "${LANGFUSE_PORT:-3001}:3000"
+    environment:
+      <<: *langfuse-env
+      # ── Web 独有配置 ──
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?请在 .env 中设置 NEXTAUTH_SECRET}
+      # 开发期禁用邮件验证，可以直接用任意邮箱注册
+      EMAIL_AUTH_DISABLED: 1
+      LANGFUSE_LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # v3 启动需要迁移 Postgres + ClickHouse schema，预热时间较长
+      start_period: 60s

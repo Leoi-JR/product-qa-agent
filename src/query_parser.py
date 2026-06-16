@@ -10,7 +10,8 @@ import os
 import logging
 from typing import Optional
 
-from openai import OpenAI
+from langfuse.openai import OpenAI
+from langfuse import observe
 from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -71,6 +72,7 @@ def get_llm_client() -> OpenAI:
     return OpenAI(api_key=ZHIPU_API_KEY, base_url=ZHIPU_BASE_URL)
 
 
+@observe(name="parse_query", as_type="chain")
 def parse_query(query: str, client: Optional[OpenAI] = None) -> dict:
     """解析用户查询，返回 {semantic_query, extracted}。"""
     if client is None:
