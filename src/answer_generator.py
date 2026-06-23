@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY", "")
-ZHIPU_BASE_URL = os.environ.get("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
-ZHIPU_MODEL = os.environ.get("ZHIPU_MODEL", "glm-4-flash")
+QIANFAN_API_KEY = os.environ.get("QIANFAN_API_KEY", "")
+QIANFAN_BASE_URL = os.environ.get("QIANFAN_BASE_URL", "")
+QIANFAN_MODEL = os.environ.get("QIANFAN_MODEL", "")
 
 
 GENERATOR_SYSTEM_PROMPT = """你是一个电商商品推荐助手。用户提出了一个商品查询，系统已经检索出最相关的几款商品。
@@ -46,11 +46,15 @@ GENERATOR_SYSTEM_PROMPT = """你是一个电商商品推荐助手。用户提出
 
 
 def get_llm_client() -> OpenAI:
-    if not ZHIPU_API_KEY:
+    if not QIANFAN_API_KEY:
         raise ValueError(
-            "未配置 ZHIPU_API_KEY，请在 .env 文件中设置（参考 .env.example）"
+            "未配置 QIANFAN_API_KEY，请在 .env 文件中设置（参考 .env.example）"
         )
-    return OpenAI(api_key=ZHIPU_API_KEY, base_url=ZHIPU_BASE_URL)
+    if not QIANFAN_BASE_URL:
+        raise ValueError(
+            "未配置 QIANFAN_BASE_URL，请在 .env 文件中设置（参考 .env.example）"
+        )
+    return OpenAI(api_key=QIANFAN_API_KEY, base_url=QIANFAN_BASE_URL)
 
 
 def format_products_for_prompt(products: list[dict]) -> str:
@@ -96,7 +100,7 @@ def generate_answer(
     logger.info("生成回答，候选商品数: %d", len(products))
 
     response = client.chat.completions.create(
-        model=ZHIPU_MODEL,
+        model=QIANFAN_MODEL,
         messages=[
             {"role": "system", "content": GENERATOR_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
@@ -136,7 +140,7 @@ def generate_answer_stream(
     logger.info("流式生成回答，候选商品数: %d", len(products))
 
     response = client.chat.completions.create(
-        model=ZHIPU_MODEL,
+        model=QIANFAN_MODEL,
         messages=[
             {"role": "system", "content": GENERATOR_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},

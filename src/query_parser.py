@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY", "")
-ZHIPU_BASE_URL = os.environ.get("ZHIPU_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
-ZHIPU_MODEL = os.environ.get("ZHIPU_MODEL", "glm-4-flash")
+QIANFAN_API_KEY = os.environ.get("QIANFAN_API_KEY", "")
+QIANFAN_BASE_URL = os.environ.get("QIANFAN_BASE_URL", "")
+QIANFAN_MODEL = os.environ.get("QIANFAN_MODEL", "")
 
 
 PARSER_SYSTEM_PROMPT = """你是一个商品查询解析器。用户的输入是关于电商商品的自然语言查询（可能是中文或英文）。
@@ -65,11 +65,15 @@ PARSER_USER_TEMPLATE = """用户查询：{query}
 
 
 def get_llm_client() -> OpenAI:
-    if not ZHIPU_API_KEY:
+    if not QIANFAN_API_KEY:
         raise ValueError(
-            "未配置 ZHIPU_API_KEY，请在 .env 文件中设置（参考 .env.example）"
+            "未配置 QIANFAN_API_KEY，请在 .env 文件中设置（参考 .env.example）"
         )
-    return OpenAI(api_key=ZHIPU_API_KEY, base_url=ZHIPU_BASE_URL)
+    if not QIANFAN_BASE_URL:
+        raise ValueError(
+            "未配置 QIANFAN_BASE_URL，请在 .env 文件中设置（参考 .env.example）"
+        )
+    return OpenAI(api_key=QIANFAN_API_KEY, base_url=QIANFAN_BASE_URL)
 
 
 @observe(name="parse_query", as_type="chain")
@@ -81,7 +85,7 @@ def parse_query(query: str, client: Optional[OpenAI] = None) -> dict:
     logger.info("解析查询: %s", query)
 
     response = client.chat.completions.create(
-        model=ZHIPU_MODEL,
+        model=QIANFAN_MODEL,
         messages=[
             {"role": "system", "content": PARSER_SYSTEM_PROMPT},
             {"role": "user", "content": PARSER_USER_TEMPLATE.format(query=query)},
